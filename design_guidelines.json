@@ -1,0 +1,156 @@
+{
+  "app_name": "ANCL Ledger",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A fast, legible, and highly operational white-ledger system that builds trust through precise numbers and clear grouping.",
+  "color": {
+    "surface": "#F9FAFB",
+    "onSurface": "#111827",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#1F2937",
+    "surfaceTertiary": "#F3F4F6",
+    "onSurfaceTertiary": "#374151",
+    "surfaceInverse": "#1F2937",
+    "onSurfaceInverse": "#F9FAFB",
+    "brand": "#111827",
+    "brandPrimary": "#111827",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#4B5563",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E5E7EB",
+    "onBrandTertiary": "#111827",
+    "success": "#059669",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D97706",
+    "onWarning": "#FFFFFF",
+    "error": "#DC2626",
+    "onError": "#FFFFFF",
+    "border": "#E5E7EB",
+    "borderStrong": "#D1D5DB",
+    "divider": "#F3F4F6",
+    "profit": "#059669",
+    "loss": "#DC2626"
+  },
+  "typography": {
+    "displayFontFamily": "Space Grotesk",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 32
+    }
+  },
+  "spacing": {
+    "rule": "Generous hit targets for single-handed use while standing or moving. Use padding to group related data tightly, with wider margins separating discrete sections.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass effect on the bottom tab bar.",
+      "Use glass effect on sticky primary CTAs (e.g., 'Save Trip') anchored at the bottom.",
+      "Use subtle blur on sticky date headers when scrolling through the ledger."
+    ],
+    "dont's": [
+      "Do not use glass on data cards or ledger rows. Maintain solid contrast for readability.",
+      "No blur on form inputs."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Home / Today",
+      "purpose": "A single-screen summary displaying today's operational pulse and net P&L with immediate entry access.",
+      "states": {
+        "loading": "Skeleton rows for metrics and list.",
+        "empty": "Illustration of a truck with 'No trips recorded today' and a primary CTA.",
+        "error": "Error message with 'Retry Sync' button."
+      },
+      "layout": "Sticky top date navigator. Hero card at the top displaying large 'Net P&L' using Space Grotesk. Profit in success color, loss in error color. Below hero: 2x2 grid of compact metric cards (Trips, Cash In, Cash Out, Pending). Followed by a chronologically ordered transaction/trip list for the day. Floating FAB (glassmorphism base) for '+' quick add, anchored in the bottom right."
+    },
+    {
+      "name": "Add Trip Form",
+      "purpose": "High-speed data entry optimized for one-handed use under 20 seconds.",
+      "states": {
+        "loading": "Spinner overlay on submit.",
+        "empty": "N/A",
+        "error": "Inline red validation text under failed fields."
+      },
+      "layout": "Single-column scrolling list. Labels always visible above fields. Sectioned into: 1. Trip Info (Vehicle, Driver - use BottomSheet pickers, not dropdowns), 2. Financials (Freight, Advance, Pending - use numeric keypads). 3. Expenses grid. The 'Save & Add Another' and 'Save' buttons must be housed in a sticky bottom container that persists over the scroll view. Use 44x44pt hit targets."
+    },
+    {
+      "name": "Monthly P&L",
+      "purpose": "Detailed financial breakdown with collapsible line items.",
+      "states": {
+        "loading": "Centered spinner.",
+        "empty": "No data for this month illustration.",
+        "error": "Data fetch failed."
+      },
+      "layout": "Month/Year selector at top. Top section shows a simple trend line chart or bar chart. Below is a structured tabular list. Grouped by Income, Variable Overheads, Fixed Overheads. Right-aligned amounts to allow visual scanning of decimal places. Emphasize totals using borderStrong top dividers."
+    },
+    {
+      "name": "Pending Freight",
+      "purpose": "Receivables tracking with ageing buckets to manage outstanding money.",
+      "states": {
+        "loading": "Skeleton list.",
+        "empty": "All dues cleared state.",
+        "error": "Network retry."
+      },
+      "layout": "Top segmented control (All, 0-30 days, 30-60, 60+). List of parties with pending amounts. Each card shows the Party name, total pending (bold error color), and a sub-list of associated Trip IDs. Tap to reveal payment collection CTA."
+    }
+  ],
+  "images": {
+    "hero_backdrop": {
+      "url": "https://images.unsplash.com/photo-1473445730015-841f29a9490b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHwxfHxsb2dpc3RpY3MlMjB0cmFuc3BvcnQlMjB0cnVjayUyMGFic3RyYWN0fGVufDB8fHx8MTc4NjI1ODg2OHww&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1473445730015-841f29a9490b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODh8MHwxfHNlYXJjaHwxfHxsb2dpc3RpY3MlMjB0cmFuc3BvcnQlMjB0cnVjayUyMGFic3RyYWN0fGVufDB8fHx8MTc4NjI1ODg2OHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract logistics truck in monochrome"
+    },
+    "empty_state": {
+      "url": "https://images.unsplash.com/photo-1636955816868-fcb881e57954?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGZvbGRlciUyMGZpbGUlMjBhYnN0cmFjdCUyMHdoaXRlfGVufDB8fHx8MTc4NjI1ODg2OHww&ixlib=rb-4.1.0&q=85",
+      "alt": "Clean abstract white shape for empty data"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the '1 iOS-Native Clean' personality. Do NOT inject generic purple/blue colors; rely on graphite (#111827), green (#059669), and red (#DC2626) to communicate trust and financial clarity.",
+    "Implement the 'Space Grotesk' font specifically for numeric displays (P&L, amounts, Indian Rupee ₹ format) to give a structured, tabular feel to numbers, and 'Plus Jakarta Sans' for all text.",
+    "Ensure 'Add Trip' form has a sticky 'Save' CTA anchored to the bottom over the scroll view, allowing instant access to submission without scrolling to the bottom.",
+    "On the Home Screen, ensure the Hero card clearly distinguishes profit and loss with large typography and the designated success/error colors. Do not decorate with unnecessary charts on the today screen; numbers are the priority.",
+    "Enforce large 44x44pt tap targets and use numeric keypads explicitly for all amount input fields.",
+    "Implement Indian Rupee formatting (e.g. ₹1,23,456) for all numeric values.",
+    "Always wrap interactive elements in Pressable (not TouchableOpacity) and wire up haptics for primary button presses, toggles, and picker selections."
+  ],
+  "haptics": {
+    "primary_cta_press": "impactLight",
+    "tab_switch": "selection",
+    "number_pad_tap": "impactLight",
+    "bottom_sheet_open": "impactMedium"
+  }
+}
