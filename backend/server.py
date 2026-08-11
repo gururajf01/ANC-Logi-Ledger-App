@@ -222,6 +222,7 @@ class Trip(BaseModel):
     route_to: Optional[str] = None
     revenue_to_pay: float = 0.0
     amount_received: float = 0.0
+    settled_amount: float = 0.0
     return_adjustment: float = 0.0
     expenses: Dict[str, float] = Field(default_factory=dict)  # {category_id: amount}
     payment_mode: str = "Cash"
@@ -439,6 +440,26 @@ async def delete_party(pid: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.get("/parties/{pid}/open-trips")
+async def party_open_trips(pid: str, user=Depends(get_current_user)):
+    trips = await db.trips.find({"party_id": pid}, {"_id": 0}).to_list(5000)
+    out = []
+    today = date.today()
+    for t in trips:
+        t = _compute_trip(t)
+        if t["pending_freight"] <= 0:
+            continue
+        try:
+            age = (today - datetime.strptime(t["date"], "%Y-%m-%d").date()).days
+        except Exception:
+            age = 0
+        out.append({"trip_id": t["id"], "ts_no": t.get("ts_no"), "date": t["date"],
+                    "revenue": t.get("revenue_to_pay"), "pending": t["pending_freight"],
+                    "age_days": age, "route": f"{t.get('route_from') or '-'} → {t.get('route_to') or '-'}"})
+    out.sort(key=lambda x: x["date"])  # oldest first
+    return out
+
+
 # ---------- Categories ----------------------------------------------------
 @api.get("/categories")
 async def list_categories(kind: Optional[str] = None, user=Depends(get_current_user)):
@@ -477,9 +498,10 @@ def _compute_trip(t: dict) -> dict:
     trip_exp = sum(float(v or 0) for v in expenses.values())
     revenue = float(t.get("revenue_to_pay", 0) or 0)
     received = float(t.get("amount_received", 0) or 0)
+    settled = float(t.get("settled_amount", 0) or 0)
     ret_adj = float(t.get("return_adjustment", 0) or 0)
     t["trip_expense_total"] = round(trip_exp, 2)
-    t["pending_freight"] = round(revenue - received, 2)
+    t["pending_freight"] = round(revenue - received - settled, 2)
     t["trip_margin"] = round(revenue + ret_adj - trip_exp, 2)
     return t
 
@@ -599,6 +621,72 @@ async def create_receipt(r: Receipt, user=Depends(get_current_user)):
     return strip_id(d)
 
 
+class CollectRequest(BaseModel):
+    party_id: str
+    amount: float
+    date: str
+    payment_mode: str = "Cash"
+    reference_no: Optional[str] = None
+    notes: Optional[str] = None
+    allocations: Optional[List[Dict[str, Any]]] = None  # [{trip_id, amount}] manual override
+
+
+@api.post("/receipts/collect")
+async def collect_payment(body: CollectRequest, user=Depends(get_current_user)):
+    party = await db.parties.find_one({"id": body.party_id}, {"_id": 0})
+    party_name = party["party_name"] if party else None
+
+    # Gather open trips (oldest first)
+    trips = await db.trips.find({"party_id": body.party_id}, {"_id": 0}).to_list(5000)
+    for t in trips:
+        _compute_trip(t)
+    open_trips = sorted([t for t in trips if t["pending_freight"] > 0], key=lambda t: t["date"])
+
+    allocations: List[Dict[str, Any]] = []
+    if body.allocations:
+        for a in body.allocations:
+            amt = float(a.get("amount", 0) or 0)
+            if amt <= 0:
+                continue
+            allocations.append({"trip_id": a["trip_id"], "amount": round(amt, 2)})
+    else:
+        # Auto-allocate oldest first
+        remaining = float(body.amount)
+        for t in open_trips:
+            if remaining <= 0:
+                break
+            take = min(remaining, t["pending_freight"])
+            allocations.append({"trip_id": t["id"], "ts_no": t.get("ts_no"), "amount": round(take, 2)})
+            remaining -= take
+
+    # Apply allocations to trips' settled_amount
+    for a in allocations:
+        tr = await db.trips.find_one({"id": a["trip_id"]}, {"_id": 0})
+        if not tr:
+            continue
+        new_settled = float(tr.get("settled_amount", 0) or 0) + float(a["amount"])
+        await db.trips.update_one({"id": a["trip_id"]}, {"$set": {"settled_amount": round(new_settled, 2), "updated_at": now_utc()}})
+
+    receipt = Receipt(
+        date=body.date, party_id=body.party_id, amount=float(body.amount),
+        payment_mode=body.payment_mode, against_trips=allocations,
+        reference_no=body.reference_no, notes=body.notes,
+    ).dict()
+    await db.receipts.insert_one(receipt)
+
+    # Recompute party outstanding
+    trips2 = await db.trips.find({"party_id": body.party_id}, {"_id": 0}).to_list(5000)
+    outstanding = 0.0
+    for t in trips2:
+        _compute_trip(t)
+        if t["pending_freight"] > 0:
+            outstanding += t["pending_freight"]
+
+    return {"ok": True, "receipt_id": receipt["id"], "party_name": party_name,
+            "allocated": round(sum(a["amount"] for a in allocations), 2),
+            "allocations": allocations, "party_outstanding": round(outstanding, 2)}
+
+
 # ---------- Daily P&L -----------------------------------------------------
 @api.get("/pnl/daily")
 async def daily_pnl(date_str: str = Query(..., alias="date"), user=Depends(get_current_user)):
@@ -618,7 +706,7 @@ async def daily_pnl(date_str: str = Query(..., alias="date"), user=Depends(get_c
     ret_adj = sum(float(t.get("return_adjustment", 0) or 0) for t in trips)
     trip_expense = sum(sum(float(v or 0) for v in (t.get("expenses") or {}).values()) for t in trips)
     received = sum(float(t.get("amount_received", 0) or 0) for t in trips)
-    pending_today = revenue - received
+    pending_today = sum(_compute_trip(dict(t))["pending_freight"] for t in trips)
     own_trips = [t for t in trips if (t.get("vehicle_type") == "Own")]
     rented_trips = [t for t in trips if (t.get("vehicle_type") == "Rented")]
 
@@ -643,16 +731,16 @@ async def daily_pnl(date_str: str = Query(..., alias="date"), user=Depends(get_c
         accrued_overhead += share
         accrued_overhead += actuals
 
-    # All-time pending freight
+    # All-time pending freight (net of same-day receipts and later settlements)
     all_trips = await db.trips.find({}, {"_id": 0}).to_list(20000)
-    all_pending = sum(float(t.get("revenue_to_pay", 0) or 0) - float(t.get("amount_received", 0) or 0) for t in all_trips)
+    outstanding = 0.0
+    for t in all_trips:
+        _compute_trip(t)
+        if t["pending_freight"] > 0:
+            outstanding += t["pending_freight"]
     all_receipts = await db.receipts.find({}, {"_id": 0}).to_list(20000)
     receipts_today = [r for r in all_receipts if r.get("date") == date_str]
     receipts_today_amt = sum(float(r.get("amount", 0) or 0) for r in receipts_today)
-    total_received_ever = sum(float(r.get("amount", 0) or 0) for r in all_receipts)
-    outstanding = all_pending - total_received_ever
-    if outstanding < 0:
-        outstanding = 0.0
 
     income_accrual = revenue + ret_adj
     net_accrual = income_accrual - trip_expense - accrued_overhead
@@ -803,13 +891,13 @@ async def annual_pnl(fy_start_year: int = 2026, user=Depends(get_current_user)):
 async def pending_freight(user=Depends(get_current_user)):
     trips = await db.trips.find({}, {"_id": 0}).to_list(20000)
     parties = await db.parties.find({}, {"_id": 0}).to_list(2000)
-    receipts = await db.receipts.find({}, {"_id": 0}).to_list(20000)
-    party_map = {p["id"]: p["party_name"] for p in parties}
+    party_map = {p["id"]: p for p in parties}
     by_party: Dict[str, Dict[str, Any]] = {}
     today = date.today()
     for t in trips:
+        _compute_trip(t)
         pid = t.get("party_id") or "_unassigned"
-        pending = float(t.get("revenue_to_pay", 0) or 0) - float(t.get("amount_received", 0) or 0)
+        pending = t["pending_freight"]
         if pending <= 0:
             continue
         try:
@@ -817,8 +905,10 @@ async def pending_freight(user=Depends(get_current_user)):
             age = (today - tdate).days
         except Exception:
             age = 0
+        p = party_map.get(pid)
         entry = by_party.setdefault(pid, {
-            "party_id": pid, "party_name": party_map.get(pid, t.get("party_name") or "Unassigned"),
+            "party_id": pid, "party_name": (p["party_name"] if p else (t.get("party_name") or "Unassigned")),
+            "phone": (p.get("phone") if p else None),
             "total_pending": 0.0, "buckets": {"0_15": 0.0, "16_30": 0.0, "31_60": 0.0, "60_plus": 0.0},
             "trips": [],
         })
@@ -833,17 +923,14 @@ async def pending_freight(user=Depends(get_current_user)):
             entry["buckets"]["60_plus"] += pending
         entry["trips"].append({"trip_id": t["id"], "ts_no": t.get("ts_no"), "date": t["date"],
                                "pending": round(pending, 2), "age_days": age})
-    # Subtract receipts (simple: reduce total_pending)
-    for r in receipts:
-        pid = r.get("party_id")
-        if pid in by_party:
-            by_party[pid]["total_pending"] -= float(r.get("amount", 0) or 0)
     out = list(by_party.values())
     out = [{**p, "total_pending": round(p["total_pending"], 2),
+            "trips": sorted(p["trips"], key=lambda x: x["date"]),
             "buckets": {k: round(v, 2) for k, v in p["buckets"].items()}}
-           for p in out if p["total_pending"] > 0]
+           for p in out if p["total_pending"] > 0.01]
     out.sort(key=lambda x: -x["total_pending"])
     return out
+
 
 
 # ---------- Excel Export --------------------------------------------------

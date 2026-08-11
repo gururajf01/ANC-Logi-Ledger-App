@@ -22,6 +22,14 @@ Mobile-first (Expo React Native) accounting app for ANCL Logistics, a small road
 - Monthly P&L: **corrected** income = revenue + return_adj (NOT + received — fixes workbook double-count). Received shown as memorandum with restatement note.
 - Excel import (idempotent preview + commit) and export (same-layout xlsx).
 
+## Implemented (2026-08-11) — Phase 2 ✅
+- **Pending Freight Tracker** (`/(tabs)/pending`): party-wise cards, 0-15/16-30/31-60/60+ ageing bar + legend, grand-total pill. Backend `/api/pending-freight` now nets `settled_amount`.
+- **Collect Payments** (`/collect/[partyId]`): live oldest-first auto-allocation preview, Full button, Cash/UPI/Bank, success summary. Backend `POST /api/receipts/collect` (auto + manual override, per-trip cap) and `GET /api/parties/{id}/open-trips`. Trip model gained `settled_amount`; pending = revenue − received − settled. Acceptance criterion #7 verified.
+- **Annual Dashboard** (`/annual`): FY Apr–Mar KPIs, Net-Profit bar chart + Revenue-vs-Expense line chart (react-native-gifted-charts), month-by-month table with TOTAL, FY prev/next. Linked from P&L header + More.
+- **WhatsApp Reminders**: one-tap Remind button opens wa.me with prefilled TS list + outstanding total.
+- Bottom nav expanded to 5 tabs (Today, Trips, Pending, P&L, More).
+- **Tested**: backend Phase-2 9/9 pass; all 4 frontend screens verified.
+
 ## Implemented (2026-08-11) — Phase 1 MVP ✅
 - Google OAuth login + AuthContext (web + native deep link) + Gate routing.
 - Auto-seed masters from Excel Settings on first login (idempotent): 6 own + 4 rented vehicles w/ EMIs & drivers, 11 per-trip categories, 22 overhead categories.
@@ -36,11 +44,8 @@ Mobile-first (Expo React Native) accounting app for ANCL Logistics, a small road
 - **Tested**: backend 27/27 pass; frontend all core flows pass; infinite-loop bug fixed.
 
 ## Backlog / Remaining
-### P1 (Phase 2)
-- Receipts & collections UI (allocate payment oldest-first across trips) — backend exists, needs screen.
-- Pending Freight (receivables) screen with ageing buckets + WhatsApp reminder — backend `/api/pending-freight` exists.
+### P1 (Phase 2 remainder)
 - Rented Vehicle Ledger with per-owner running outstanding.
-- Annual Dashboard with charts (revenue vs expense bars, profit trend, expense donut, cumulative pending) — backend `/api/pnl/annual` exists.
 - PDF export of monthly P&L.
 - Offline-first queue + background sync + sync status indicator.
 - Native date picker & TS-number auto-suggest; "Duplicate last trip".

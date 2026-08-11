@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 2 testing PASSED end-to-end. Backend: 9/9 new pytest cases (test_phase2.py) green including Acceptance Criterion #7 (collect 25000 -> auto-allocates 20000 to oldest T1 fully-settling it, then 5000 to newer T2, leaves party_outstanding=5000). Verified oldest-first ordering & required shape of GET /api/parties/{pid}/open-trips; buckets & phone on GET /api/pending-freight (older trip aged 45d -> 31_60 bucket ₹20k, newer aged 10d -> 0_15 bucket ₹10k); trips.settled_amount/pending_freight updated after collect; manual allocations override auto (paid newer trip first, older stayed pending); over-allocation caps at each trip's pending (₹5000 collect on ₹1000 outstanding allocated only ₹1000); annual endpoint returns 12 months Apr..Mar with totals block. Frontend (mobile viewport, token injected via add_init_script): (1) /pending renders 2 party cards (Shakti Steels ₹68k with 3 trips + ABC Traders ₹5k with 1 trip), ageing bar + colour legend (0-15/16-30/31-60/60+), Collect & Remind buttons per card, and a grand-total pill ₹73,000 in header. (2) /collect/{pid} shows Total outstanding, amount input, Full button, three payment-mode chips (Cash/UPI/Bank), reference input, and live auto-allocation (oldest-first) preview — typing 100 correctly showed +₹100 against the oldest trip S3 (2026-06-02) and 0 against S2/S1; submit button visible. (3) /annual renders KPI cards (Revenue / Net Profit / Received / Pending), Net Profit bar chart, 12 monthly-row table, FY prev/next arrows work — clicking fy-next changed header from FY 2026-27 to FY 2027-28. (4) All 5 bottom tabs present (Today, Trips, Pending, P&L, More). P&L header has annual-btn present; More screen has more-annual link plus vehicles/drivers/parties/categories/import. Only cosmetic RN-web deprecation warnings (props.pointerEvents, TouchableMixin) — no red screen, no functional bugs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "collect/[partyId].tsx", "issue": "On the Collect screen a bunch of RN gesture handlers (onStartShouldSetResponder, onResponderGrant/Move/Release/Terminate, onResponderTerminationRequest, onPressOut) are being forwarded to a DOM element on web preview, producing 'Unknown event handler property' errors. Likely due to a TouchableMixin/legacy Touchable wrapper (see 'TouchableMixin is deprecated. Please use Pressable.' warning). Non-blocking on web but should be migrated. Reference: /app/frontend/app/collect/[partyId].tsx"},
+      {"component": "Multiple screens", "issue": "props.pointerEvents deprecation warning still appears (already reported in iter 2 as unresolved)."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_phase2.py", "/app/test_reports/pytest/phase2_results.xml", "/app/backend/tests/backend_test.py"],
+  "action_items": [
+    "(Cosmetic) Migrate the legacy Touchable* usage on /collect/[partyId].tsx to Pressable to silence the onResponder*/onPressOut 'Unknown event handler' console errors on web.",
+    "(Cosmetic) Migrate remaining props.pointerEvents usages to style.pointerEvents (carry-over from iter 2)."
+  ],
+  "critical_code_review_comments": [
+    "server._compute_trip correctly uses pending_freight = revenue - amount_received - settled_amount — matches the PRD; verified numerically.",
+    "collect_payment auto-allocation sorts open_trips by t['date'] ASC (oldest first) before allocating; manual override path is honored when body.allocations is provided.",
+    "collect_payment does NOT enforce an upper cap when body.amount exceeds total outstanding — however auto-alloc naturally caps because it uses min(remaining, pending) per trip; excess money is simply not allocated (allocated < amount) and party_outstanding becomes 0. Consider returning 'excess' in the response to make this explicit for the UI, or rejecting/warning when amount > outstanding.",
+    "pending_freight endpoint correctly buckets by age using calendar days from today; parties with 0 pending are excluded (verified after collect).",
+    "annual_pnl re-invokes monthly_pnl per month; fine for 12 iterations but if trips scale up consider aggregating in a single DB pass.",
+    "delete_receipt route is missing (POST /api/receipts/collect creates rows but there is no cleanup endpoint). Not a Phase-2 blocker but worth noting for maintenance/testing."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase2.py (new)"],
+  "success_rate": {"backend": "100% (9/9 Phase 2 + all 27 regression from iter 1 remain green)", "frontend": "100% of Phase 2 flows (Pending tab, Collect screen live preview, Annual dashboard w/ FY navigation, 5 bottom tabs, P&L annual-btn, More annual link)"},
+  "seed_data_creation": "Created & auto-cleaned up 3 isolated test parties for Phase 2 backend tests: TEST_PH2_Party (2 trips 20000/15000 for ACC#7), TEST_PH2_Party_Manual (2 trips for manual override), TEST_PH2_Party_Over (1 trip for over-allocation cap). All parties/trips deleted at teardown. Frontend testing used the pre-existing Shakti Steels + ABC Traders demo data for UI verification only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2 acceptance criteria (esp. #7 part-payment split across two trips oldest-first) are fully verified via /app/backend/tests/test_phase2.py — reuse this file for regression. Frontend tokens: use page.add_init_script BEFORE goto. All Phase 2 testIDs: pending-screen, pending-party-{pid}, collect-{pid}, whatsapp-{pid}, collect-screen, collect-amount, collect-full, collect-date, collect-mode-{Cash|UPI|Bank}, collect-ref, alloc-{tripId}, collect-submit, annual-screen, fy-prev, fy-next, annual-row-{month}, pnl-screen annual-btn, more-annual.",
+  "rca_of_issue": "N/A — no bugs found in Phase 2 code paths. Backend allocation logic, buckets, and annual endpoint all behave per spec; frontend renders the four new surfaces correctly."
+}

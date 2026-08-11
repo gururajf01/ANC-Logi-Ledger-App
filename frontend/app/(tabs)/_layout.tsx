@@ -20,31 +20,23 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Today',
-          tabBarIcon: ({ color, size }) => <Ionicons name="today" size={size} color={color} />,
-        }}
+        options={{ title: 'Today', tabBarIcon: ({ color, size }) => <Ionicons name="today" size={size} color={color} /> }}
       />
       <Tabs.Screen
         name="trips"
-        options={{
-          title: 'Trips',
-          tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} />,
-        }}
+        options={{ title: 'Trips', tabBarIcon: ({ color, size }) => <Ionicons name="list" size={size} color={color} /> }}
+      />
+      <Tabs.Screen
+        name="pending"
+        options={{ title: 'Pending', tabBarIcon: ({ color, size }) => <Ionicons name="cash" size={size} color={color} /> }}
       />
       <Tabs.Screen
         name="pnl"
-        options={{
-          title: 'P&L',
-          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} />,
-        }}
+        options={{ title: 'P&L', tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} /> }}
       />
       <Tabs.Screen
         name="more"
-        options={{
-          title: 'More',
-          tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} />,
-        }}
+        options={{ title: 'More', tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} /> }}
       />
     </Tabs>
   );

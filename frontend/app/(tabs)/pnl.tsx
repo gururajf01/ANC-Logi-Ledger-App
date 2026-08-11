@@ -39,7 +39,10 @@ export default function PnL() {
       <View style={styles.header}>
         <Pressable testID="prev-month-btn" onPress={() => nav(-1)} style={styles.arrow}><Ionicons name="chevron-back" size={20} color={theme.color.onSurface} /></Pressable>
         <Text style={styles.headerTitle}>{MONTHS[month-1]} {year}</Text>
-        <Pressable testID="next-month-btn" onPress={() => nav(1)} style={styles.arrow}><Ionicons name="chevron-forward" size={20} color={theme.color.onSurface} /></Pressable>
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          <Pressable testID="annual-btn" onPress={() => router.push('/annual')} style={styles.arrow}><Ionicons name="bar-chart" size={18} color={theme.color.onSurface} /></Pressable>
+          <Pressable testID="next-month-btn" onPress={() => nav(1)} style={styles.arrow}><Ionicons name="chevron-forward" size={20} color={theme.color.onSurface} /></Pressable>
+        </View>
       </View>
 
       {loading ? <ActivityIndicator color={theme.color.brand} style={{ marginTop: 40 }} /> : data && (

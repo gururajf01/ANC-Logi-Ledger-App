@@ -6,6 +6,7 @@ import { useAuth } from '@/src/context/AuthContext';
 import { theme } from '@/src/theme';
 
 const items: { key: string; label: string; icon: any; route: any }[] = [
+  { key: 'annual', label: 'Annual Dashboard', icon: 'bar-chart', route: '/annual' },
   { key: 'vehicles', label: 'Vehicles', icon: 'car', route: '/masters/vehicles' },
   { key: 'drivers', label: 'Drivers', icon: 'person', route: '/masters/drivers' },
   { key: 'parties', label: 'Parties', icon: 'people', route: '/masters/parties' },
