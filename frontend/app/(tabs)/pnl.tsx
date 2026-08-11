@@ -33,6 +33,7 @@ export default function PnL() {
   };
 
   const exportUrl = `${api.base}/api/excel/export?year=${year}&month=${month}`;
+  const pdfUrl = `${api.base}/api/pdf/monthly?year=${year}&month=${month}`;
 
   return (
     <SafeAreaView edges={['top']} style={styles.root} testID="pnl-screen">
@@ -116,6 +117,16 @@ export default function PnL() {
             <Ionicons name="download" size={18} color="#fff" />
             <Text style={styles.exportTxt}>Export {MONTHS[month-1]} {year} to Excel</Text>
           </Pressable>
+          <Pressable
+            testID="export-pdf-btn"
+            style={[styles.exportBtn, styles.exportPdf]}
+            onPress={() => {
+              if (typeof window !== 'undefined') window.open(pdfUrl, '_blank');
+            }}
+          >
+            <Ionicons name="document-text" size={18} color={theme.color.brand} />
+            <Text style={[styles.exportTxt, { color: theme.color.brand }]}>Download PDF Statement</Text>
+          </Pressable>
         </ScrollView>
       )}
     </SafeAreaView>
@@ -170,5 +181,6 @@ const styles = StyleSheet.create({
   summL: { color: theme.color.muted, fontSize: 12 },
   summV: { color: theme.color.onSurface, fontSize: 12, fontWeight: '600' },
   exportBtn: { flexDirection: 'row', gap: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.color.brand, paddingVertical: 14, borderRadius: theme.radius.md, marginTop: theme.space.xl },
+  exportPdf: { backgroundColor: theme.color.surfaceSecondary, borderWidth: 1, borderColor: theme.color.brand, marginTop: theme.space.md },
   exportTxt: { color: '#fff', fontWeight: '700' },
 });

@@ -1,0 +1,31 @@
+{
+  "summary": "Phase 3 (Per-Truck P&L, Rented Ledger, Monthly PDF export) end-to-end PASSED. Backend: 14/14 new pytest cases in test_phase3.py green — includes exact math for KA-XX-1288 (revenue 40000 - cost 8000 - emi 8840 - shared_share 0 = net 23160, per_trip = net/trips), sort desc by net_contribution, idle Own vehicles net == -emi with shared_share=0; rented ledger balance math (12500 then -1800), running_outstanding accumulated per owner in chronological order (12500 -> 10700) with entries returned newest-first, /summary sorted by outstanding desc and equal to 10700 for the isolated owner, owner_driver auto-fill from vehicle.owner_name on POST, DELETE removes; PDF endpoint returns 200 with content-type application/pdf and body starts with %PDF, and specifically handles en-dash \\u2013 in category names without 500; all 4 endpoints return 401 without Bearer. Frontend (mobile viewport 390x844, token injected via evaluate on /login then reload): /more shows more-vehicle-pnl / more-rented-ledger / more-annual; /vehicle-pnl renders month bar (Aug 2026), note line 'Net = revenue + adj - trip cost - EMI - share of overheads', 10 vehicle cards with green (₹23,160 for KA-XX-1288) and red (-₹3,318, -₹15,070 for idle Own vehicles) nets — expanding the KA-XX-1288 card shows Revenue ₹40,000 / Return ₹0 / Trip cost -₹8,000 / EMI -₹8,840 / Overhead ₹0 / Net ₹23,160 breakdown; vpnl-prev/vpnl-next navigate months. /rented-ledger shows Total-owed ₹10,700 card, per-owner card (Manju M ₹10,700, 2 trips paid ₹28,000), R2 entry (-₹1,800 run ₹10,700) above R1 (₹12,500 run ₹12,500) confirming newest-first; rl-add opens modal with 4 rl-veh-* chips + rl-field-* inputs + rl-save — created and then deleted a test entry successfully (rl-del handled). /pnl shows BOTH export-excel-btn AND export-pdf-btn. Only pre-existing cosmetic RN-web deprecation warnings (props.pointerEvents) — no red screen, no functional bugs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Multiple screens", "issue": "props.pointerEvents deprecation warning still appears on web preview (carry-over from iter 2/3, non-blocking). Migrate to style.pointerEvents."}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_phase3.py", "/app/test_reports/pytest/phase3_results.xml"],
+  "action_items": [
+    "(Optional/cosmetic) Migrate remaining props.pointerEvents usages to style.pointerEvents (carry-over)."
+  ],
+  "critical_code_review_comments": [
+    "vehicle_pnl correctly implements net = revenue + return_adj - trip_cost - emi - shared_share; shared_share is prorated by trips share (n/total_trips), so a vehicle with 0 trips has shared_share=0 -> net == -emi. Verified numerically for KA-XX-1288 with an isolated month.",
+    "rented_ledger sort key uses (date, created_at) for the running-outstanding pass then reverses to newest-first for the response — this correctly separates 'chronological running accumulation' from 'newest-first display'.",
+    "rented_ledger balance formula: revenue_to_pay - commission_adj - amount_paid; matches spec. Summary uses same formula per-owner and sorts desc by outstanding.",
+    "POST /rented-ledger auto-fills owner_driver from vehicle.owner_name only if not provided; DELETE is idempotent (delete_one, returns {ok:true}).",
+    "pdf/monthly correctly transliterates en-dash / em-dash / smart quotes to latin-1 via _s() helper before rendering with FPDF (Helvetica core font). Verified end-to-end with a TEST_ category containing \\u2013.",
+    "Small potential improvement (not a bug): overhead_alloc = emi + shared_share is only displayed as a single 'overhead_alloc' number; the frontend currently splits EMI vs overhead_share in the breakdown UI so this is fine, just worth noting."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase3.py (new)"],
+  "success_rate": {"backend": "100% (14/14 Phase 3 + all previous 27 regression + 9 Phase 2 remain green)", "frontend": "100% of Phase 3 flows (vehicle-pnl month nav + card expand, rented-ledger add/delete + running outstanding display, P&L both export buttons visible)"},
+  "seed_data_creation": "Created & auto-cleaned isolated test data: TEST_PH3_VehPnl_Party + 1 own-vehicle trip in fresh month 2030-06 (for exact math); 2 rented-ledger entries in 2030-07 on rented vehicle (for R1/R2 test); 2 more rented-ledger entries with owner_driver='TEST_PH3_UniqueOwner_ZZZ' (for isolated 10700 assertion); 1 TEST_PH3 overhead category with en-dash + 1 overhead expense (for PDF en-dash test); all deleted via fixture teardown. Frontend flow created + deleted 1 ledger entry via UI (R3, then rl-del).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3 acceptance criteria fully verified via /app/backend/tests/test_phase3.py — reuse this file for regression. Key testIDs: vehicle-pnl-screen, vpnl-prev, vpnl-next, vpnl-{vehicle_id}; rented-ledger-screen, rl-add, rl-owner-{owner}, rl-entry-{id}, rl-del-{id}, rl-field-{revenue_to_pay|commission_adj|amount_paid|ts_no|notes|date}, rl-veh-{vehicle_id}, rl-save; pnl-screen export-excel-btn export-pdf-btn; more-vehicle-pnl more-rented-ledger more-annual. Auth injection pattern that works reliably: navigate to /login first (public), evaluate localStorage.setItem('ancl_session_token','TESTTOKEN123'), then goto(root) — deep-links directly to /vehicle-pnl or /rented-ledger before login may still bounce to Today because AuthGate mounts before route resolution; always navigate via /more.",
+  "rca_of_issue": "N/A — no bugs found. All Phase 3 backend endpoints and frontend screens behave per spec."
+}

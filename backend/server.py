@@ -1088,6 +1088,219 @@ async def health():
     return {"ok": True, "time": now_utc().isoformat()}
 
 
+# ---------- Per-Vehicle P&L ----------------------------------------------
+@api.get("/pnl/vehicles")
+async def vehicle_pnl(year: int, month: int, user=Depends(get_current_user)):
+    month_prefix = f"{year:04d}-{month:02d}"
+    trips = await db.trips.find({"date": {"$regex": f"^{month_prefix}"}}, {"_id": 0}).to_list(5000)
+    vehicles = await db.vehicles.find({}, {"_id": 0}).to_list(500)
+
+    # Monthly overhead total (reuse monthly_pnl logic result)
+    mp = await monthly_pnl(year, month, user)  # type: ignore
+    overhead_total = mp["overhead_total"]
+    total_emi = sum(float(v.get("emi_amount_monthly", 0) or 0) for v in vehicles)
+    shared_overhead = max(0.0, overhead_total - total_emi)
+
+    total_trips = len(trips)
+    trips_by_vehicle: Dict[str, List[dict]] = {}
+    for t in trips:
+        trips_by_vehicle.setdefault(t.get("vehicle_id") or "", []).append(t)
+
+    rows = []
+    for v in vehicles:
+        vt = trips_by_vehicle.get(v["id"], [])
+        n = len(vt)
+        revenue = sum(float(t.get("revenue_to_pay", 0) or 0) for t in vt)
+        ret_adj = sum(float(t.get("return_adjustment", 0) or 0) for t in vt)
+        trip_cost = sum(sum(float(x or 0) for x in (t.get("expenses") or {}).values()) for t in vt)
+        emi = float(v.get("emi_amount_monthly", 0) or 0)
+        shared_share = (shared_overhead * (n / total_trips)) if total_trips else 0.0
+        overhead_alloc = emi + shared_share
+        net = revenue + ret_adj - trip_cost - overhead_alloc
+        rows.append({
+            "vehicle_id": v["id"], "vehicle_no": v["vehicle_no"], "type": v.get("type", "Own"),
+            "trips": n, "revenue": round(revenue, 2), "return_adj": round(ret_adj, 2),
+            "trip_cost": round(trip_cost, 2), "emi": round(emi, 2),
+            "overhead_share": round(shared_share, 2), "overhead_alloc": round(overhead_alloc, 2),
+            "net_contribution": round(net, 2),
+            "per_trip": round(net / n, 2) if n else 0.0,
+        })
+    rows.sort(key=lambda r: r["net_contribution"], reverse=True)
+    return {"year": year, "month": month, "overhead_total": overhead_total,
+            "total_emi": round(total_emi, 2), "shared_overhead": round(shared_overhead, 2),
+            "total_trips": total_trips, "vehicles": rows}
+
+
+# ---------- Rented Vehicle Ledger ----------------------------------------
+def _owner_of(entry: dict, veh_map: dict) -> str:
+    if entry.get("owner_driver"):
+        return entry["owner_driver"]
+    v = veh_map.get(entry.get("vehicle_id"))
+    if v:
+        return v.get("owner_name") or v.get("vehicle_no") or "Unknown"
+    return "Unknown"
+
+
+@api.get("/rented-ledger")
+async def list_rented_ledger(vehicle_id: Optional[str] = None, user=Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if vehicle_id:
+        q["vehicle_id"] = vehicle_id
+    entries = await db.rented_ledger.find(q, {"_id": 0}).to_list(5000)
+    vehicles = await db.vehicles.find({}, {"_id": 0}).to_list(500)
+    veh_map = {v["id"]: v for v in vehicles}
+    entries.sort(key=lambda e: (e.get("date", ""), e.get("created_at", now_utc())))
+    running: Dict[str, float] = {}
+    for e in entries:
+        owner = _owner_of(e, veh_map)
+        v = veh_map.get(e.get("vehicle_id"))
+        e["vehicle_no"] = v["vehicle_no"] if v else e.get("vehicle_id")
+        e["owner"] = owner
+        # amount owed to owner this entry = revenue - commission - paid
+        bal = float(e.get("revenue_to_pay", 0) or 0) - float(e.get("commission_adj", 0) or 0) - float(e.get("amount_paid", 0) or 0)
+        e["balance"] = round(bal, 2)
+        running[owner] = round(running.get(owner, 0.0) + bal, 2)
+        e["running_outstanding"] = running[owner]
+    entries.sort(key=lambda e: e.get("date", ""), reverse=True)
+    return entries
+
+
+@api.get("/rented-ledger/summary")
+async def rented_ledger_summary(user=Depends(get_current_user)):
+    entries = await db.rented_ledger.find({}, {"_id": 0}).to_list(5000)
+    vehicles = await db.vehicles.find({}, {"_id": 0}).to_list(500)
+    veh_map = {v["id"]: v for v in vehicles}
+    by_owner: Dict[str, Dict[str, Any]] = {}
+    for e in entries:
+        owner = _owner_of(e, veh_map)
+        rev = float(e.get("revenue_to_pay", 0) or 0)
+        comm = float(e.get("commission_adj", 0) or 0)
+        paid = float(e.get("amount_paid", 0) or 0)
+        o = by_owner.setdefault(owner, {"owner": owner, "trips": 0, "total_revenue": 0.0,
+                                        "total_commission": 0.0, "total_paid": 0.0, "outstanding": 0.0})
+        o["trips"] += 1
+        o["total_revenue"] += rev
+        o["total_commission"] += comm
+        o["total_paid"] += paid
+        o["outstanding"] += (rev - comm - paid)
+    out = [{**o, "total_revenue": round(o["total_revenue"], 2), "total_commission": round(o["total_commission"], 2),
+            "total_paid": round(o["total_paid"], 2), "outstanding": round(o["outstanding"], 2)}
+           for o in by_owner.values()]
+    out.sort(key=lambda x: -x["outstanding"])
+    return out
+
+
+@api.post("/rented-ledger")
+async def create_rented_ledger(e: RentedLedgerEntry, user=Depends(get_current_user)):
+    d = e.dict()
+    veh = await db.vehicles.find_one({"id": d["vehicle_id"]}, {"_id": 0})
+    if veh and not d.get("owner_driver"):
+        d["owner_driver"] = veh.get("owner_name") or veh.get("vehicle_no")
+    await db.rented_ledger.insert_one(d)
+    return strip_id(d)
+
+
+@api.delete("/rented-ledger/{eid}")
+async def delete_rented_ledger(eid: str, user=Depends(get_current_user)):
+    await db.rented_ledger.delete_one({"id": eid})
+    return {"ok": True}
+
+
+# ---------- PDF Export (Monthly P&L) -------------------------------------
+@api.get("/pdf/monthly")
+async def pdf_monthly(year: int, month: int, user=Depends(get_current_user)):
+    from fpdf import FPDF
+    pnl = await monthly_pnl(year, month, user)  # type: ignore
+    R = "Rs. "
+
+    def _s(x: str) -> str:
+        return (str(x).replace("\u2013", "-").replace("\u2014", "-")
+                .replace("\u2018", "'").replace("\u2019", "'")
+                .replace("\u201c", '"').replace("\u201d", '"')
+                .encode("latin-1", "replace").decode("latin-1"))
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Letterhead
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 9, "ANCL LOGISTICS", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, "Hubballi, Karnataka", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, f"Profit & Loss Statement  -  {calendar.month_name[month]} {year}", ln=True, align="C")
+    pdf.ln(2)
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(4)
+
+    def row(label, value, bold=False, size=10, fill=False):
+        pdf.set_font("Helvetica", "B" if bold else "", size)
+        if fill:
+            pdf.set_fill_color(245, 245, 245)
+        pdf.cell(130, 7, _s(f"  {label}"), border=0, fill=fill)
+        pdf.cell(50, 7, f"{R}{value:,.0f}", border=0, ln=True, align="R", fill=fill)
+
+    def section(title):
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(30, 41, 59)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(180, 8, _s(f"  {title}"), ln=True, fill=True)
+        pdf.set_text_color(0, 0, 0)
+
+    section("A. INCOME")
+    row("Revenue (To Pay)", pnl["income"]["revenue"])
+    row("Return / Adjustments", pnl["income"]["return_adjustment"])
+    row("TOTAL INCOME (A)", pnl["income"]["total_income"], bold=True, fill=True)
+
+    section("B. EXPENSES - Per Trip")
+    for it in pnl["per_trip_items"]:
+        if it["amount"]:
+            row(it["name"], it["amount"])
+    row("Per-trip sub-total", pnl["per_trip_total"], bold=True, fill=True)
+
+    section("B. EXPENSES - Overheads")
+    for it in pnl["overhead_items"]:
+        row(it["name"], it["amount"])
+    row("Overhead sub-total", pnl["overhead_total"], bold=True, fill=True)
+    row("TOTAL EXPENSES (B)", pnl["total_expense"], bold=True, fill=True)
+
+    pdf.ln(3)
+    net = pnl["net_profit"]
+    pdf.set_font("Helvetica", "B", 13)
+    if net >= 0:
+        pdf.set_text_color(5, 150, 105)
+    else:
+        pdf.set_text_color(220, 38, 38)
+    pdf.cell(130, 9, "  NET PROFIT / (LOSS)  = A - B")
+    pdf.cell(50, 9, f"{R}{net:,.0f}", ln=True, align="R")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6, f"  Profit margin: {pnl['profit_pct']}% of total income", ln=True)
+    pdf.set_text_color(0, 0, 0)
+
+    section("MEMORANDUM (not part of P&L)")
+    row("Received (cash collected)", pnl["memorandum"]["received"])
+    row("Pending Freight outstanding", pnl["memorandum"]["pending_freight"])
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.multi_cell(180, 4, f"  Note: Income = Revenue + Return/Adj. 'Received' is a collection metric shown separately "
+                           f"(the earlier workbook double-counted it, which would have shown "
+                           f"{R}{pnl['memorandum']['old_workbook_income_double_counted']:,.0f}).")
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 5, f"Generated by ANCL Ledger on {datetime.now(timezone.utc).strftime('%d-%b-%Y')}", ln=True, align="C")
+
+    out = pdf.output(dest="S")
+    data = bytes(out) if isinstance(out, (bytearray, bytes)) else out.encode("latin-1")
+    fname = f"ANCL_PnL_{year}_{calendar.month_abbr[month]}.pdf"
+    return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+
 app.include_router(api)
 app.add_middleware(
     CORSMiddleware,

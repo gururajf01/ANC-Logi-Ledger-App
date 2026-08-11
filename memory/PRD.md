@@ -22,6 +22,12 @@ Mobile-first (Expo React Native) accounting app for ANCL Logistics, a small road
 - Monthly P&L: **corrected** income = revenue + return_adj (NOT + received — fixes workbook double-count). Received shown as memorandum with restatement note.
 - Excel import (idempotent preview + commit) and export (same-layout xlsx).
 
+## Implemented (2026-08-11) — Phase 3 (partial) ✅
+- **Per-Truck P&L** (`/vehicle-pnl`): monthly per-vehicle net = revenue + adj − trip cost − EMI − shared-overhead share (allocated by trip count). Expandable breakdown; idle trucks show EMI as a loss. Backend `GET /api/pnl/vehicles`.
+- **PDF Statement**: letterhead one-page monthly P&L via `GET /api/pdf/monthly` (fpdf2, en-dash safe). "Download PDF Statement" button on Monthly P&L.
+- **Rented Vehicle Ledger** (`/rented-ledger`): per-owner running outstanding + entries (balance = revenue − commission − paid), add/delete. Backend `GET/POST/DELETE /api/rented-ledger`, `GET /api/rented-ledger/summary`.
+- Both linked from More. **Tested**: backend 14/14 pass; all frontend flows pass.
+
 ## Implemented (2026-08-11) — Phase 2 ✅
 - **Pending Freight Tracker** (`/(tabs)/pending`): party-wise cards, 0-15/16-30/31-60/60+ ageing bar + legend, grand-total pill. Backend `/api/pending-freight` now nets `settled_amount`.
 - **Collect Payments** (`/collect/[partyId]`): live oldest-first auto-allocation preview, Full button, Cash/UPI/Bank, success summary. Backend `POST /api/receipts/collect` (auto + manual override, per-trip cap) and `GET /api/parties/{id}/open-trips`. Trip model gained `settled_amount`; pending = revenue − received − settled. Acceptance criterion #7 verified.
